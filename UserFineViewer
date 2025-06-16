@@ -1,0 +1,140 @@
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.FileOutputStream;
+import java.sql.*;
+
+import com.itextpdf.text.*;
+import com.itextpdf.text.pdf.*;
+
+public class UserFineViewer extends JFrame {
+    private Connection conn;
+    private JTextField searchField;
+    private JTable table;
+    private DefaultTableModel model;
+
+    public UserFineViewer() {
+        setTitle("LibraryPal - User Fine Viewer");
+        setSize(800, 400);
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        initUI();
+        connectDatabase();
+    }
+
+    private void connectDatabase() {
+        try {
+            Class.forName("org.sqlite.JDBC");
+            String dbPath = "C:/Users/Gian Sambas/Desktop/java/LibraryPal/librarypal.db";
+            conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Database error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void initUI() {
+        JPanel topPanel = new JPanel();
+        topPanel.add(new JLabel("Enter Name or ID Number:"));
+        searchField = new JTextField(20);
+        JButton searchBtn = new JButton("Search");
+        JButton exportBtn = new JButton("Export to PDF");
+        topPanel.add(searchField);
+        topPanel.add(searchBtn);
+        topPanel.add(exportBtn);
+
+        model = new DefaultTableModel(new String[]{"ID", "Name", "Amount", "Reason", "Date", "ID Number", "Contact"}, 0);
+        table = new JTable(model);
+        JScrollPane scrollPane = new JScrollPane(table);
+
+        add(topPanel, BorderLayout.NORTH);
+        add(scrollPane, BorderLayout.CENTER);
+
+        searchBtn.addActionListener(e -> searchFines());
+        exportBtn.addActionListener(e -> exportToPDF());
+    }
+
+    private void searchFines() {
+        model.setRowCount(0);
+        String input = searchField.getText().trim();
+        if (input.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter a name or ID number.");
+            return;
+        }
+
+        try {
+            PreparedStatement stmt = conn.prepareStatement("SELECT * FROM fines WHERE name LIKE ? OR id_number LIKE ?");
+            stmt.setString(1, "%" + input + "%");
+            stmt.setString(2, "%" + input + "%");
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                model.addRow(new Object[]{
+                    rs.getInt("id"),
+                    rs.getString("name"),
+                    rs.getDouble("amount"),
+                    rs.getString("reason"),
+                    rs.getString("date"),
+                    rs.getString("id_number"),
+                    rs.getString("contact_number")
+                });
+            }
+
+            if (model.getRowCount() == 0) {
+                JOptionPane.showMessageDialog(this, "No fines found for: " + input);
+            }
+
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Query error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private void exportToPDF() {
+        if (model.getRowCount() == 0) {
+            JOptionPane.showMessageDialog(this, "No data to export.");
+            return;
+        }
+
+        Document document = new Document();
+        try {
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setSelectedFile(new java.io.File("fines.pdf"));
+            int result = fileChooser.showSaveDialog(this);
+            if (result != JFileChooser.APPROVE_OPTION) return;
+
+            PdfWriter.getInstance(document, new FileOutputStream(fileChooser.getSelectedFile()));
+            document.open();
+
+            document.add(new Paragraph("LibraryPal - Fine Report"));
+            document.add(new Paragraph("Search: " + searchField.getText()));
+            document.add(new Paragraph(" "));
+
+            PdfPTable pdfTable = new PdfPTable(model.getColumnCount());
+
+            for (int i = 0; i < model.getColumnCount(); i++) {
+                pdfTable.addCell(new PdfPCell(new Phrase(model.getColumnName(i))));
+            }
+
+            for (int row = 0; row < model.getRowCount(); row++) {
+                for (int col = 0; col < model.getColumnCount(); col++) {
+                    pdfTable.addCell(model.getValueAt(row, col).toString());
+                }
+            }
+
+            document.add(pdfTable);
+            document.close();
+
+            JOptionPane.showMessageDialog(this, "PDF exported successfully.");
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to export PDF: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new UserFineViewer().setVisible(true));
+    }
+}
